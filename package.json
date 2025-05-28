@@ -1,0 +1,24 @@
+{
+  "name": "countertop-optimizer",
+  "version": "1.0.0",
+  "description": "Countertop cutting optimization tool",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js && python -m http.server 8000 --directory dist",
+    "preview": "python -m http.server 8000 --directory dist"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.23.0",
+    "@babel/preset-react": "^7.23.0",
+    "@babel/standalone": "^7.23.0",
+    "tailwindcss": "^3.3.0"
+  },
+  "keywords": ["countertop", "optimization", "cutting", "stone"],
+  "author": "Your Name",
+  "license": "MIT"
+}
