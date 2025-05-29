@@ -772,7 +772,7 @@ const CountertopOptimizer = () => {
         pieces.sort((a, b) => b.area - a.area);
         
         // Initialize slabs array
-        const slabs = [];
+        slabs = [];
         
         // For each piece, find a place in existing slabs or create a new slab
         pieces.forEach(piece => {
