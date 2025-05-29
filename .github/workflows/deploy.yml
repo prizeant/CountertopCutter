@@ -1,4 +1,5 @@
-name: Build and Deploy to GitHub Pages
+# .github/workflows/deploy.yml
+name: Deploy to GitHub Pages
 
 on:
   push:
@@ -6,143 +7,47 @@ on:
   pull_request:
     branches: [ main ]
 
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
+  # Build job
   build:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Create dist directory
-      run: mkdir -p dist
-
-    - name: Build HTML file
-      run: |
-        cat > dist/index.html << 'EOF'
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Countertop Cutting Optimizer</title>
-            <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-            <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-            <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-            <script src="https://cdn.tailwindcss.com"></script>
-            <style>
-                /* Custom icons using SVG data URLs since we can't use lucide-react */
-                .icon-trash2::before {
-                    content: "";
-                    display: inline-block;
-                    width: 1rem;
-                    height: 1rem;
-                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23dc2626'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' /%3E%3C/svg%3E");
-                    background-size: contain;
-                    background-repeat: no-repeat;
-                }
-                .icon-plus-circle::before {
-                    content: "";
-                    display: inline-block;
-                    width: 1rem;
-                    height: 1rem;
-                    margin-right: 0.25rem;
-                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%232563eb'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z' /%3E%3C/svg%3E");
-                    background-size: contain;
-                    background-repeat: no-repeat;
-                }
-                .icon-download::before {
-                    content: "";
-                    display: inline-block;
-                    width: 1rem;
-                    height: 1rem;
-                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23374151'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z' /%3E%3C/svg%3E");
-                    background-size: contain;
-                    background-repeat: no-repeat;
-                }
-                .icon-upload::before {
-                    content: "";
-                    display: inline-block;
-                    width: 1rem;
-                    height: 1rem;
-                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23374151'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12' /%3E%3C/svg%3E");
-                    background-size: contain;
-                    background-repeat: no-repeat;
-                }
-                .icon-rotate-cw::before {
-                    content: "";
-                    display: inline-block;
-                    width: 1rem;
-                    height: 1rem;
-                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' /%3E%3C/svg%3E");
-                    background-size: contain;
-                    background-repeat: no-repeat;
-                }
-                .icon-copy::before {
-                    content: "";
-                    display: inline-block;
-                    width: 1rem;
-                    height: 1rem;
-                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23374151'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3' /%3E%3C/svg%3E");
-                    background-size: contain;
-                    background-repeat: no-repeat;
-                }
-                .icon-info::before {
-                    content: "";
-                    display: inline-block;
-                    width: 1rem;
-                    height: 1rem;
-                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%232563eb'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' /%3E%3C/svg%3E");
-                    background-size: contain;
-                    background-repeat: no-repeat;
-                }
-            </style>
-        </head>
-        <body>
-            <div id="root"></div>
-            <script type="text/babel">
-        EOF
+      - name: Checkout
+        uses: actions/checkout@v4
         
-        # Convert the React component to browser-compatible format
-        sed 's/import React, { useState, useEffect, useMemo } from '\''react'\'';/const { useState, useEffect, useMemo } = React;/g' src/CountertopOptimizer.jsx | \
-        sed 's/import { Trash2, PlusCircle, Download, Upload, RotateCw, Copy, Info } from '\''lucide-react'\'';/\/\/ Icons replaced with CSS classes/g' | \
-        sed 's/<Trash2 className="w-4 h-4" \/>/<span className="icon-trash2"><\/span>/g' | \
-        sed 's/<PlusCircle className="w-4 h-4 mr-1" \/>/<span className="icon-plus-circle"><\/span>/g' | \
-        sed 's/<Download className="w-4 h-4" \/>/<span className="icon-download"><\/span>/g' | \
-        sed 's/<Upload className="w-4 h-4" \/>/<span className="icon-upload"><\/span>/g' | \
-        sed 's/<RotateCw className={\`w-4 h-4 mr-1 transition-transform \${showOptimalCuts ? '\''rotate-90'\'' : '\'''\''}\`} \/>/<span className={\`icon-rotate-cw transition-transform \${showOptimalCuts ? '\''rotate-90'\'' : '\'''\''}\`}><\/span>/g' | \
-        sed 's/<Copy className="w-4 h-4" \/>/<span className="icon-copy"><\/span>/g' | \
-        sed 's/<Info className="w-5 h-5" \/>/<span className="icon-info"><\/span>/g' | \
-        sed 's/<RotateCw className="w-3 h-3 text-white mt-1" \/>/<span className="icon-rotate-cw text-white mt-1"><\/span>/g' | \
-        sed 's/<RotateCw className="inline w-4 h-4 mr-1" \/>/<span className="icon-rotate-cw inline mr-1"><\/span>/g' >> dist/index.html
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm install
         
-        cat >> dist/index.html << 'EOF'
+      - name: Build
+        run: npm run build
         
-                // Render the component
-                const root = ReactDOM.createRoot(document.getElementById('root'));
-                root.render(React.createElement(CountertopOptimizer));
-            </script>
-        </body>
-        </html>
-        EOF
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+        
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
 
-    - name: Setup Pages
-      uses: actions/configure-pages@v4
-
-    - name: Upload artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: './dist'
-
+  # Deployment job
   deploy:
     environment:
       name: github-pages
