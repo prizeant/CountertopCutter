@@ -1,5 +1,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Trash2, PlusCircle, Download, Upload, RotateCw, Copy, Info } from 'lucide-react';
+
+// Import icons with fallback
+let icons;
+try {
+  icons = require('lucide-react');
+} catch (e) {
+  // Fallback icon components if lucide-react fails to load
+  const FallbackIcon = ({ className, ...props }) => (
+    <div className={`inline-block w-4 h-4 ${className}`} {...props}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+    </div>
+  );
+  
+  icons = {
+    Trash2: FallbackIcon,
+    PlusCircle: FallbackIcon,
+    Download: FallbackIcon,
+    Upload: FallbackIcon,
+    RotateCw: FallbackIcon,
+    Copy: FallbackIcon,
+    Info: FallbackIcon
+  };
+}
+
+const { Trash2, PlusCircle, Download, Upload, RotateCw, Copy, Info } = icons;
 
 // Constants for slab dimensions
 const DEFAULT_SLAB_WIDTH = 133;
@@ -539,7 +565,8 @@ const CountertopOptimizer = () => {
                   type="number"
                   value={slabWidth}
                   onChange={(e) => setSlabWidth(parseInt(e.target.value) || DEFAULT_SLAB_WIDTH)}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900"
+                  style={{ backgroundColor: 'white', color: '#1f2937' }}
                 />
               </div>
               <div>
@@ -548,7 +575,8 @@ const CountertopOptimizer = () => {
                   type="number"
                   value={slabHeight}
                   onChange={(e) => setSlabHeight(parseInt(e.target.value) || DEFAULT_SLAB_HEIGHT)}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900"
+                  style={{ backgroundColor: 'white', color: '#1f2937' }}
                 />
               </div>
             </div>
@@ -559,7 +587,8 @@ const CountertopOptimizer = () => {
                 type="number"
                 value={kerfloss}
                 onChange={(e) => setKerfloss(parseFloat(e.target.value) || 0)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900"
+                style={{ backgroundColor: 'white', color: '#1f2937' }}
                 step="0.0625"
                 min="0"
                 max="0.5"
@@ -593,7 +622,8 @@ const CountertopOptimizer = () => {
                     type="number"
                     value={minSplitLength}
                     onChange={(e) => setMinSplitLength(parseInt(e.target.value) || 12)}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900"
+                    style={{ backgroundColor: 'white', color: '#1f2937' }}
                     min="6"
                     max="48"
                   />
@@ -609,7 +639,8 @@ const CountertopOptimizer = () => {
               <select
                 value={algorithm}
                 onChange={(e) => setAlgorithm(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900"
+                style={{ backgroundColor: 'white', color: '#1f2937' }}
               >
                 <option value={GUILLOTINE}>Guillotine Cutting (Best Fit)</option>
                 <option value={FIRST_FIT}>First Fit Algorithm</option>
@@ -628,7 +659,8 @@ const CountertopOptimizer = () => {
                 <select
                   value={selectedPreset}
                   onChange={(e) => loadPreset(e.target.value)}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm"
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm bg-white text-gray-900"
+                  style={{ backgroundColor: 'white', color: '#1f2937' }}
                 >
                   <option value="standard">Standard Kitchen</option>
                   <option value="minimal">Minimal Kitchen</option>
@@ -672,283 +704,4 @@ const CountertopOptimizer = () => {
             <div className="overflow-x-auto">
               <table className="min-w-full">
                 <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left p-2 text-sm font-medium text-gray-700">Label</th>
-                    <th className="text-left p-2 text-sm font-medium text-gray-700">Width</th>
-                    <th className="text-left p-2 text-sm font-medium text-gray-700">Height</th>
-                    <th className="text-left p-2 text-sm font-medium text-gray-700">Area</th>
-                    <th className="text-left p-2 text-sm font-medium text-gray-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {countertops.map(c => {
-                    const area = c.width * c.height;
-                    const isOversized = (c.width > slabWidth && c.height > slabHeight) || 
-                                       (c.height > slabWidth && c.width > slabHeight);
-                    
-                    return (
-                      <tr key={c.id} className={`border-b hover:bg-gray-50 ${isOversized ? 'bg-red-50' : ''}`}>
-                        <td className="p-2">
-                          <input
-                            type="text"
-                            value={c.label}
-                            onChange={(e) => updateCountertop(c.id, 'label', e.target.value)}
-                            className="w-full p-1 border border-gray-300 rounded text-sm"
-                          />
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="number"
-                            value={c.width}
-                            onChange={(e) => updateCountertop(c.id, 'width', e.target.value)}
-                            className="w-20 p-1 border border-gray-300 rounded text-sm"
-                          />
-                        </td>
-                        <td className="p-2">
-                          <input
-                            type="number"
-                            value={c.height}
-                            onChange={(e) => updateCountertop(c.id, 'height', e.target.value)}
-                            className="w-20 p-1 border border-gray-300 rounded text-sm"
-                          />
-                        </td>
-                        <td className="p-2 text-sm text-gray-600">
-                          {area} sq in
-                        </td>
-                        <td className="p-2">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => duplicateCountertop(c.id)}
-                              className="text-gray-600 hover:text-gray-800"
-                              title="Duplicate"
-                            >
-                              <Copy className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => removeCountertop(c.id)}
-                              className="text-red-600 hover:text-red-800"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={runOptimization}
-                disabled={isProcessing || countertops.length === 0}
-                className={`flex-1 bg-blue-600 text-white px-4 py-2 rounded-md font-medium
-                  ${isProcessing || countertops.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'}`}
-              >
-                {isProcessing ? 'Optimizing...' : 'Optimize Cutting Layout'}
-              </button>
-              
-              <button
-                onClick={exportConfig}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
-                title="Export configuration"
-              >
-                <Download className="w-4 h-4" />
-              </button>
-              
-              <label className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer"
-                     title="Import configuration">
-                <Upload className="w-4 h-4" />
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={importConfig}
-                  className="hidden"
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex-1">
-          {result && result.error ? (
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4 text-red-700">Error in Optimization</h2>
-              <div className="bg-red-50 border border-red-200 rounded-md p-4">
-                <p className="text-red-600 mb-4">{result.errorMessage}</p>
-                {result.oversizedPieces && (
-                  <div className="bg-white p-4 rounded border border-red-200">
-                    <h3 className="font-medium mb-2">Problematic Pieces:</h3>
-                    <ul className="list-disc pl-5">
-                      {result.oversizedPieces.map(piece => (
-                        <li key={piece.id} className="mb-1">
-                          <span className="font-medium">{piece.label}:</span> {piece.width}" × {piece.height}" 
-                          <span className="text-gray-600"> (Slab: {slabWidth}" × {slabHeight}")</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-4 text-sm text-gray-600">
-                      <strong>Suggestions:</strong> Enable piece splitting, reduce piece dimensions, or use larger slabs.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : result && (
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4 text-gray-800">Optimization Results</h2>
-              
-              <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="text-sm text-blue-600">Total Slabs Needed</div>
-                  <div className="text-2xl font-bold text-blue-800">{result.totalSlabs}</div>
-                </div>
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="text-sm text-green-600">Material Efficiency</div>
-                  <div className="text-2xl font-bold text-green-800">{(100 - parseFloat(result.totalWastePercentage)).toFixed(1)}%</div>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div className="text-sm text-gray-600">Total Cost Estimate</div>
-                  <div className="text-2xl font-bold text-gray-800">${result.estimatedCost}</div>
-                  <div className="text-xs text-gray-500">@ $50/sq ft</div>
-                </div>
-                <div className="bg-orange-50 p-4 rounded-lg">
-                  <div className="text-sm text-orange-600">Waste Area</div>
-                  <div className="text-2xl font-bold text-orange-800">{(result.totalWaste / 144).toFixed(1)} sq ft</div>
-                  <div className="text-xs text-orange-500">{result.totalWastePercentage}% waste</div>
-                </div>
-              </div>
-              
-              <div className="mb-4">
-                <button
-                  onClick={() => setShowOptimalCuts(!showOptimalCuts)}
-                  className="flex items-center text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  <RotateCw className={`w-4 h-4 mr-1 transition-transform ${showOptimalCuts ? 'rotate-90' : ''}`} />
-                  {showOptimalCuts ? 'Hide' : 'Show'} Cutting Layout
-                </button>
-              </div>
-              
-              {showOptimalCuts && (
-                <div className="space-y-6">
-                  {result.slabs.map((slab, slabIndex) => (
-                    <div key={slab.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                      <div className="flex justify-between items-center mb-3">
-                        <h3 className="font-semibold text-gray-800">Slab {slab.id}</h3>
-                        <div className="flex gap-4 text-sm">
-                          <span className="text-gray-600">Efficiency: {(100 - parseFloat(slab.wastePercentage)).toFixed(1)}%</span>
-                          <span className="text-orange-600">Waste: {slab.wastePercentage}%</span>
-                        </div>
-                      </div>
-                      
-                      <div className="relative bg-white rounded border-2 border-gray-300" 
-                           style={{ paddingBottom: `${(slabHeight / slabWidth) * 100}%` }}>
-                        <div className="absolute inset-0">
-                          {/* Display each piece */}
-                          {slab.pieces.map((piece, pieceIndex) => {
-                            const colorId = piece.originalId || piece.id;
-                            const colorIndex = (typeof colorId === 'number' ? colorId - 1 : parseInt(colorId) - 1) % colors.length;
-                            
-                            // Calculate scaled positions and dimensions
-                            const scaleX = 100 / slabWidth;
-                            const scaleY = 100 / slabHeight;
-                            
-                            return (
-                              <div
-                                key={pieceIndex}
-                                className="absolute border-2 border-white flex flex-col items-center justify-center overflow-hidden rounded shadow-sm"
-                                style={{
-                                  left: `${piece.x * scaleX}%`,
-                                  top: `${piece.y * scaleY}%`,
-                                  width: `${piece.effectiveWidth * scaleX}%`,
-                                  height: `${piece.effectiveHeight * scaleY}%`,
-                                  backgroundColor: colors[colorIndex],
-                                }}
-                                title={`${piece.label} - ${piece.width}×${piece.height}" ${piece.rotated ? '(Rotated)' : ''}`}
-                              >
-                                <div className="text-xs text-white font-semibold text-center px-1">
-                                  {piece.width}×{piece.height}
-                                </div>
-                                <div className="text-xs text-white text-center px-1 truncate w-full">
-                                  {piece.label}
-                                </div>
-                                {piece.rotated && (
-                                  <RotateCw className="w-3 h-3 text-white mt-1" />
-                                )}
-                              </div>
-                            );
-                          })}
-                          
-                          {/* Grid overlay for visual reference */}
-                          <div className="absolute inset-0 pointer-events-none"
-                               style={{
-                                 backgroundImage: `
-                                   linear-gradient(to right, rgba(229, 231, 235, 0.5) 1px, transparent 1px),
-                                   linear-gradient(to bottom, rgba(229, 231, 235, 0.5) 1px, transparent 1px)
-                                 `,
-                                 backgroundSize: '10% 10%'
-                               }}
-                          />
-                        </div>
-                      </div>
-                      
-                      <div className="mt-3 flex justify-between text-sm text-gray-600">
-                        <span>Slab dimensions: {slabWidth}" × {slabHeight}"</span>
-                        <span>{slab.pieces.length} pieces</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {/* Split pieces summary */}
-              {result.splitPieces && result.splitPieces.length > 0 && (
-                <div className="mt-6 bg-yellow-50 rounded-lg p-4">
-                  <h3 className="font-medium mb-3 text-yellow-800">
-                    <RotateCw className="inline w-4 h-4 mr-1" />
-                    Split Countertops
-                  </h3>
-                  <div className="space-y-3">
-                    {result.splitPieces.map((piece, index) => (
-                      <div key={index} className="bg-white rounded p-3 border border-yellow-200">
-                        <div className="font-medium text-gray-800 mb-2">
-                          {piece.originalLabel} → {piece.parts} sections
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
-                          {piece.pieces && piece.pieces.map((subPiece, idx) => (
-                            <div key={idx} className="text-gray-600">
-                              • Part {idx + 1}: {subPiece.width}" × {subPiece.height}"
-                              {subPiece.rotated && ' (R)'}
-                            </div>
-                          ))}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Split {piece.direction}ly to fit slab constraints
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* Cutting instructions */}
-              <div className="mt-6 bg-gray-50 rounded-lg p-4">
-                <h3 className="font-medium mb-2 text-gray-800">Cutting Tips</h3>
-                <ul className="text-sm text-gray-600 space-y-1">
-                  <li>• Account for {kerfloss}" kerf loss on each cut</li>
-                  <li>• Verify grain direction before cutting rotated pieces</li>
-                  <li>• Cut largest pieces first for better material handling</li>
-                  <li>• Keep all offcuts for potential future use</li>
-                </ul>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default CountertopOptimizer;
+                  <tr className="border-b border-
