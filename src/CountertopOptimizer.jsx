@@ -53,6 +53,145 @@ const CountertopOptimizer = () => {
   const [maxSlabs, setMaxSlabs] = useState(3); // Maximum slabs to consider
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonResults, setComparisonResults] = useState(null);
+  const [savedConfigs, setSavedConfigs] = useState({});
+  const [newConfigName, setNewConfigName] = useState('');
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      // Ctrl/Cmd + S to save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        setShowSaveDialog(true);
+      }
+      // Ctrl/Cmd + O to optimize
+      if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+        e.preventDefault();
+        if (!isProcessing && countertops.length > 0) {
+          runOptimization();
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [isProcessing, countertops.length]);
+  
+  // Load saved configurations and last state from localStorage
+  useEffect(() => {
+    try {
+      // Load saved configurations
+      const saved = localStorage.getItem('countertopConfigs');
+      if (saved) {
+        setSavedConfigs(JSON.parse(saved));
+      }
+      
+      // Load last state
+      const lastState = localStorage.getItem('countertopLastState');
+      if (lastState) {
+        const state = JSON.parse(lastState);
+        if (state.countertops) setCountertops(state.countertops);
+        if (state.slabWidth) setSlabWidth(state.slabWidth);
+        if (state.slabHeight) setSlabHeight(state.slabHeight);
+        if (state.hasOwnProperty('allowSplitting')) setAllowSplitting(state.allowSplitting);
+        if (state.minSplitLength) setMinSplitLength(state.minSplitLength);
+        if (state.kerfloss !== undefined) setKerfloss(state.kerfloss);
+        if (state.algorithm) setAlgorithm(state.algorithm);
+        if (state.maxSlabs) setMaxSlabs(state.maxSlabs);
+        
+        // Update nextId
+        if (state.countertops && state.countertops.length > 0) {
+          const maxId = Math.max(...state.countertops.map(c => c.id));
+          setNextId(maxId + 1);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading saved state:', error);
+    }
+  }, []);
+  
+  // Save current state to localStorage whenever it changes
+  useEffect(() => {
+    const state = {
+      countertops,
+      slabWidth,
+      slabHeight,
+      allowSplitting,
+      minSplitLength,
+      kerfloss,
+      algorithm,
+      maxSlabs
+    };
+    
+    try {
+      localStorage.setItem('countertopLastState', JSON.stringify(state));
+    } catch (error) {
+      console.error('Error saving state:', error);
+    }
+  }, [countertops, slabWidth, slabHeight, allowSplitting, minSplitLength, kerfloss, algorithm, maxSlabs]);
+  
+  // Save configuration with a name
+  const saveConfiguration = (name) => {
+    const config = {
+      name,
+      countertops,
+      slabWidth,
+      slabHeight,
+      allowSplitting,
+      minSplitLength,
+      kerfloss,
+      timestamp: new Date().toISOString()
+    };
+    
+    const newSavedConfigs = {
+      ...savedConfigs,
+      [name]: config
+    };
+    
+    setSavedConfigs(newSavedConfigs);
+    
+    try {
+      localStorage.setItem('countertopConfigs', JSON.stringify(newSavedConfigs));
+    } catch (error) {
+      console.error('Error saving configuration:', error);
+      alert('Failed to save configuration');
+    }
+    
+    setShowSaveDialog(false);
+    setNewConfigName('');
+  };
+  
+  // Load a saved configuration
+  const loadConfiguration = (name) => {
+    const config = savedConfigs[name];
+    if (config) {
+      setCountertops(config.countertops);
+      setSlabWidth(config.slabWidth);
+      setSlabHeight(config.slabHeight);
+      setAllowSplitting(config.allowSplitting);
+      setMinSplitLength(config.minSplitLength);
+      setKerfloss(config.kerfloss || 0.125);
+      setResult(null);
+      
+      // Update nextId
+      const maxId = Math.max(...config.countertops.map(c => c.id));
+      setNextId(maxId + 1);
+    }
+  };
+  
+  // Delete a saved configuration
+  const deleteConfiguration = (name) => {
+    const newSavedConfigs = { ...savedConfigs };
+    delete newSavedConfigs[name];
+    setSavedConfigs(newSavedConfigs);
+    
+    try {
+      localStorage.setItem('countertopConfigs', JSON.stringify(newSavedConfigs));
+    } catch (error) {
+      console.error('Error deleting configuration:', error);
+    }
+  };
   
   // Run comparison when modal opens
   useEffect(() => {
@@ -1158,6 +1297,8 @@ const CountertopOptimizer = () => {
                   <li>Always add kerf loss (blade width) to account for cutting waste</li>
                   <li>Consider grain direction when rotating pieces</li>
                   <li>Group similar pieces together for efficient cutting</li>
+                  <li><strong>Keyboard shortcuts:</strong> Ctrl+S to save, Ctrl+O to optimize</li>
+                  <li>Your configuration is automatically saved and restored on page refresh</li>
                 </ul>
               </div>
             )}
@@ -1257,12 +1398,37 @@ const CountertopOptimizer = () => {
               <div className="flex gap-2">
                 <select
                   value={selectedPreset}
-                  onChange={(e) => loadPreset(e.target.value)}
+                  onChange={(e) => {
+                    if (e.target.value === 'custom') {
+                      // Show saved configurations
+                      return;
+                    } else if (e.target.value.startsWith('saved:')) {
+                      const configName = e.target.value.substring(6);
+                      loadConfiguration(configName);
+                      setSelectedPreset(e.target.value);
+                    } else {
+                      loadPreset(e.target.value);
+                    }
+                  }}
                   className="px-3 py-1 border border-gray-300 rounded-md text-sm"
                 >
                   <option value="standard">Standard Kitchen</option>
                   <option value="minimal">Minimal Kitchen</option>
+                  {Object.keys(savedConfigs).length > 0 && (
+                    <optgroup label="Saved Configurations">
+                      {Object.keys(savedConfigs).map(name => (
+                        <option key={name} value={`saved:${name}`}>{name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
+                <button
+                  onClick={() => setShowSaveDialog(true)}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm hover:bg-gray-50"
+                  title="Save current configuration"
+                >
+                  Save
+                </button>
                 <button
                   onClick={addCountertop}
                   className="flex items-center text-blue-600 hover:text-blue-800 font-medium"
@@ -1391,6 +1557,27 @@ const CountertopOptimizer = () => {
                   Compare
                 </button>
               )}
+              
+              <button
+                onClick={() => {
+                  if (confirm('Clear all countertops and reset to defaults?')) {
+                    setCountertops([]);
+                    setNextId(1);
+                    setResult(null);
+                    setSlabWidth(DEFAULT_SLAB_WIDTH);
+                    setSlabHeight(DEFAULT_SLAB_HEIGHT);
+                    setAllowSplitting(true);
+                    setMinSplitLength(24);
+                    setKerfloss(0.125);
+                    setAlgorithm(GUILLOTINE);
+                    setMaxSlabs(3);
+                  }
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                title="Clear all and reset"
+              >
+                Reset
+              </button>
               
               <button
                 onClick={exportConfig}
@@ -1635,6 +1822,91 @@ const CountertopOptimizer = () => {
           )}
         </div>
       </div>
+      
+      {/* Save Configuration Dialog */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold mb-4">Save Configuration</h3>
+            <input
+              type="text"
+              value={newConfigName}
+              onChange={(e) => setNewConfigName(e.target.value)}
+              placeholder="Enter configuration name..."
+              className="w-full p-2 border border-gray-300 rounded-md mb-4"
+              autoFocus
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && newConfigName.trim()) {
+                  saveConfiguration(newConfigName.trim());
+                }
+              }}
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowSaveDialog(false);
+                  setNewConfigName('');
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (newConfigName.trim()) {
+                    saveConfiguration(newConfigName.trim());
+                  }
+                }}
+                disabled={!newConfigName.trim()}
+                className={`px-4 py-2 bg-blue-600 text-white rounded-md
+                  ${newConfigName.trim() ? 'hover:bg-blue-700' : 'opacity-50 cursor-not-allowed'}`}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Saved Configurations Management */}
+      {Object.keys(savedConfigs).length > 0 && (
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-3">Saved Configurations</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Object.entries(savedConfigs).map(([name, config]) => (
+              <div key={name} className="border border-gray-200 rounded-lg p-3 hover:border-blue-300 transition-colors">
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="font-medium text-gray-800">{name}</h3>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete configuration "${name}"?`)) {
+                        deleteConfiguration(name);
+                      }
+                    }}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="text-xs text-gray-600 space-y-1">
+                  <div>{config.countertops.length} pieces</div>
+                  <div>Slab: {config.slabWidth}" × {config.slabHeight}"</div>
+                  <div>{new Date(config.timestamp).toLocaleDateString()}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    loadConfiguration(name);
+                    setSelectedPreset(`saved:${name}`);
+                  }}
+                  className="mt-2 w-full text-sm bg-blue-50 text-blue-600 py-1 rounded hover:bg-blue-100"
+                >
+                  Load
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       
       {/* Comparison Modal */}
       {showComparison && (
