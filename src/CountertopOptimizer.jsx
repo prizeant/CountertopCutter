@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Trash2, PlusCircle, Download, Upload, RotateCw, Copy, Info } from 'lucide-react';
+import { Trash2, PlusCircle, Download, Upload, RotateCw, Copy, Info, X } from 'lucide-react';
 
 // Constants for slab dimensions
 const DEFAULT_SLAB_WIDTH = 133;
@@ -51,6 +51,182 @@ const CountertopOptimizer = () => {
   const [showTips, setShowTips] = useState(false);
   const [optimizationProgress, setOptimizationProgress] = useState(null);
   const [maxSlabs, setMaxSlabs] = useState(3); // Maximum slabs to consider
+  const [showComparison, setShowComparison] = useState(false);
+  const [comparisonResults, setComparisonResults] = useState(null);
+  
+  // Run comparison when modal opens
+  useEffect(() => {
+    if (showComparison && !comparisonResults) {
+      runComparison();
+    }
+  }, [showComparison]);
+  
+  const runComparison = async () => {
+    setComparisonResults(null);
+    const results = [];
+    
+    // Test each algorithm
+    const algorithms = [
+      { id: GUILLOTINE, name: 'Guillotine Cutting' },
+      { id: FIRST_FIT, name: 'First Fit' },
+      { id: BEST_FIT, name: 'Best Fit' },
+      { id: BRANCH_AND_BOUND, name: 'Branch & Bound' },
+      { id: GENETIC_ALGORITHM, name: 'Genetic Algorithm' }
+    ];
+    
+    const { pieces } = preprocessPieces();
+    
+    for (const algo of algorithms) {
+      const startTime = Date.now();
+      let slabs = null;
+      
+      try {
+        if (algo.id === BRANCH_AND_BOUND) {
+          slabs = branchAndBound(pieces);
+        } else if (algo.id === GENETIC_ALGORITHM) {
+          slabs = geneticAlgorithm(pieces);
+        } else {
+          // Run greedy algorithm
+          const tempAlgorithm = algorithm;
+          setAlgorithm(algo.id);
+          slabs = runGreedyAlgorithm(pieces, algo.id);
+          setAlgorithm(tempAlgorithm);
+        }
+        
+        if (slabs) {
+          const totalWaste = slabs.reduce((sum, slab) => sum + slab.wasteArea, 0);
+          const totalArea = slabs.length * slabWidth * slabHeight;
+          
+          results.push({
+            algorithm: algo.name,
+            algorithmId: algo.id,
+            slabs: slabs.length,
+            wastePercent: ((totalWaste / totalArea) * 100).toFixed(1),
+            time: Date.now() - startTime,
+            isOptimal: algo.id === BRANCH_AND_BOUND,
+            quality: algo.id === GENETIC_ALGORITHM ? 'Near-optimal' : 'Heuristic'
+          });
+        }
+      } catch (error) {
+        console.error(`Error running ${algo.name}:`, error);
+      }
+    }
+    
+    // Sort by number of slabs, then by waste percentage
+    results.sort((a, b) => {
+      if (a.slabs !== b.slabs) return a.slabs - b.slabs;
+      return parseFloat(a.wastePercent) - parseFloat(b.wastePercent);
+    });
+    
+    setComparisonResults(results);
+  };
+  
+  const runGreedyAlgorithm = (pieces, algorithmType) => {
+    // This is a simplified version of the greedy algorithm for comparison
+    const slabs = [];
+    
+    // Sort pieces by area
+    const sortedPieces = [...pieces].sort((a, b) => b.area - a.area);
+    
+    sortedPieces.forEach(piece => {
+      let placed = false;
+      
+      // Try to place in existing slabs
+      for (let i = 0; i < slabs.length; i++) {
+        const slab = slabs[i];
+        
+        if (slab.spaces.length === 0) continue;
+        
+        let bestFitIndex = -1;
+        let bestFitScore = algorithmType === FIRST_FIT ? Infinity : Infinity;
+        
+        for (let j = 0; j < slab.spaces.length; j++) {
+          const space = slab.spaces[j];
+          
+          if (piece.effectiveWidth <= space.width && piece.effectiveHeight <= space.height) {
+            if (algorithmType === FIRST_FIT) {
+              bestFitIndex = j;
+              break;
+            } else {
+              const totalWaste = (space.width - piece.effectiveWidth) * piece.effectiveHeight + 
+                                (space.height - piece.effectiveHeight) * space.width;
+              if (totalWaste < bestFitScore) {
+                bestFitScore = totalWaste;
+                bestFitIndex = j;
+              }
+            }
+          }
+        }
+        
+        if (bestFitIndex !== -1) {
+          const space = slab.spaces[bestFitIndex];
+          slab.pieces.push({ ...piece, x: space.x, y: space.y });
+          
+          // Update spaces
+          const oldSpace = slab.spaces.splice(bestFitIndex, 1)[0];
+          
+          if (oldSpace.height > piece.effectiveHeight) {
+            slab.spaces.push({
+              x: oldSpace.x,
+              y: oldSpace.y + piece.effectiveHeight,
+              width: oldSpace.width,
+              height: oldSpace.height - piece.effectiveHeight
+            });
+          }
+          
+          if (oldSpace.width > piece.effectiveWidth) {
+            slab.spaces.push({
+              x: oldSpace.x + piece.effectiveWidth,
+              y: oldSpace.y,
+              width: oldSpace.width - piece.effectiveWidth,
+              height: piece.effectiveHeight
+            });
+          }
+          
+          placed = true;
+          break;
+        }
+      }
+      
+      if (!placed) {
+        const newSlab = {
+          id: slabs.length + 1,
+          pieces: [{ ...piece, x: 0, y: 0 }],
+          spaces: [],
+          totalArea: slabWidth * slabHeight
+        };
+        
+        if (slabHeight > piece.effectiveHeight) {
+          newSlab.spaces.push({
+            x: 0,
+            y: piece.effectiveHeight,
+            width: slabWidth,
+            height: slabHeight - piece.effectiveHeight
+          });
+        }
+        
+        if (slabWidth > piece.effectiveWidth) {
+          newSlab.spaces.push({
+            x: piece.effectiveWidth,
+            y: 0,
+            width: slabWidth - piece.effectiveWidth,
+            height: piece.effectiveHeight
+          });
+        }
+        
+        slabs.push(newSlab);
+      }
+    });
+    
+    // Calculate waste
+    slabs.forEach(slab => {
+      const usedArea = slab.pieces.reduce((sum, p) => sum + p.effectiveWidth * p.effectiveHeight, 0);
+      slab.wasteArea = slab.totalArea - usedArea;
+      slab.wastePercentage = ((slab.wasteArea / slab.totalArea) * 100).toFixed(1);
+    });
+    
+    return slabs;
+  };
   
   // Calculate total area and statistics
   const countertopStats = useMemo(() => {
@@ -1204,6 +1380,18 @@ const CountertopOptimizer = () => {
                 {isProcessing ? 'Optimizing...' : 'Optimize Cutting Layout'}
               </button>
               
+              {countertops.length < 20 && (
+                <button
+                  onClick={() => setShowComparison(true)}
+                  disabled={isProcessing || countertops.length === 0}
+                  className={`px-4 py-2 border border-blue-600 text-blue-600 rounded-md font-medium
+                    ${isProcessing || countertops.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-50'}`}
+                  title="Compare all algorithms"
+                >
+                  Compare
+                </button>
+              )}
+              
               <button
                 onClick={exportConfig}
                 className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
@@ -1223,6 +1411,40 @@ const CountertopOptimizer = () => {
                 />
               </label>
             </div>
+            
+            {/* Progress indicator */}
+            {isProcessing && optimizationProgress && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                <div className="text-sm font-medium text-blue-800 mb-2">
+                  {algorithm === BRANCH_AND_BOUND ? 'Finding Optimal Solution...' : 'Optimizing...'}
+                </div>
+                {algorithm === BRANCH_AND_BOUND && (
+                  <div className="text-xs text-blue-600">
+                    <div>Nodes explored: {optimizationProgress.nodesExplored?.toLocaleString()}</div>
+                    <div>Current depth: {optimizationProgress.currentDepth} / {optimizationProgress.totalDepth}</div>
+                    {optimizationProgress.bestWaste !== null && (
+                      <div>Best solution found: {(optimizationProgress.bestWaste / (slabWidth * slabHeight)).toFixed(1)} slabs</div>
+                    )}
+                  </div>
+                )}
+                {algorithm === GENETIC_ALGORITHM && (
+                  <div className="text-xs text-blue-600">
+                    <div>Generation: {optimizationProgress.generation} / {optimizationProgress.totalGenerations}</div>
+                    <div>Best fitness: {optimizationProgress.bestFitness?.toFixed(0)}</div>
+                  </div>
+                )}
+                <div className="mt-2 w-full bg-blue-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{
+                      width: algorithm === BRANCH_AND_BOUND 
+                        ? `${(optimizationProgress.currentDepth / optimizationProgress.totalDepth * 100)}%`
+                        : `${(optimizationProgress.generation / optimizationProgress.totalGenerations * 100)}%`
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
         
@@ -1252,7 +1474,19 @@ const CountertopOptimizer = () => {
             </div>
           ) : result && (
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4 text-gray-800">Optimization Results</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-800">Optimization Results</h2>
+                {algorithm === BRANCH_AND_BOUND && (
+                  <span className="text-sm font-medium text-green-600 bg-green-50 px-3 py-1 rounded-full">
+                    ✓ Optimal Solution
+                  </span>
+                )}
+                {algorithm === GENETIC_ALGORITHM && (
+                  <span className="text-sm font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+                    Near-Optimal Solution
+                  </span>
+                )}
+              </div>
               
               <div className="grid grid-cols-2 gap-3 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg">
@@ -1401,6 +1635,103 @@ const CountertopOptimizer = () => {
           )}
         </div>
       </div>
+      
+      {/* Comparison Modal */}
+      {showComparison && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">Algorithm Comparison</h2>
+                <button
+                  onClick={() => setShowComparison(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              {!comparisonResults ? (
+                <div className="text-center py-8">
+                  <div className="mb-4">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full">
+                      <RotateCw className="w-8 h-8 text-blue-600 animate-spin" />
+                    </div>
+                  </div>
+                  <p className="text-gray-600">Running comparison across all algorithms...</p>
+                  <p className="text-sm text-gray-500 mt-2">This may take a few moments</p>
+                </div>
+              ) : (
+                <div>
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold mb-3">Results Summary</h3>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full border-collapse">
+                        <thead>
+                          <tr className="border-b-2 border-gray-200">
+                            <th className="text-left p-3">Algorithm</th>
+                            <th className="text-center p-3">Slabs Used</th>
+                            <th className="text-center p-3">Total Waste %</th>
+                            <th className="text-center p-3">Time (ms)</th>
+                            <th className="text-center p-3">Quality</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {comparisonResults.map((result, idx) => (
+                            <tr key={idx} className={`border-b ${result.isOptimal ? 'bg-green-50' : ''}`}>
+                              <td className="p-3 font-medium">{result.algorithm}</td>
+                              <td className="text-center p-3">{result.slabs}</td>
+                              <td className="text-center p-3">{result.wastePercent}%</td>
+                              <td className="text-center p-3">{result.time}</td>
+                              <td className="text-center p-3">
+                                {result.isOptimal ? (
+                                  <span className="text-green-600">✓ Optimal</span>
+                                ) : (
+                                  <span className="text-gray-600">{result.quality}</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <h4 className="font-semibold text-blue-800 mb-2">Recommendation</h4>
+                    <p className="text-sm text-blue-700">
+                      {comparisonResults[0].slabs === comparisonResults[comparisonResults.length - 1].slabs
+                        ? "All algorithms found solutions with the same number of slabs. Choose based on speed preference."
+                        : `Branch & Bound found the optimal solution with ${comparisonResults.find(r => r.isOptimal).slabs} slabs. ` +
+                          `This saves ${comparisonResults[0].slabs - comparisonResults.find(r => r.isOptimal).slabs} slab(s) compared to the fastest algorithm.`}
+                    </p>
+                  </div>
+                  
+                  <div className="mt-4 flex justify-end gap-3">
+                    <button
+                      onClick={() => {
+                        const bestResult = comparisonResults.find(r => r.isOptimal) || comparisonResults[0];
+                        setAlgorithm(bestResult.algorithmId);
+                        setShowComparison(false);
+                        runOptimization();
+                      }}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                    >
+                      Use Best Algorithm
+                    </button>
+                    <button
+                      onClick={() => setShowComparison(false)}
+                      className="border border-gray-300 px-4 py-2 rounded-md hover:bg-gray-50"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
