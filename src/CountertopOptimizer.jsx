@@ -225,11 +225,7 @@ const CountertopOptimizer = () => {
         } else if (algo.id === GENETIC_ALGORITHM) {
           slabs = geneticAlgorithm(pieces);
         } else {
-          // Run greedy algorithm
-          const tempAlgorithm = algorithm;
-          setAlgorithm(algo.id);
           slabs = runGreedyAlgorithm(pieces, algo.id);
-          setAlgorithm(tempAlgorithm);
         }
         
         if (slabs) {
@@ -243,7 +239,7 @@ const CountertopOptimizer = () => {
             wastePercent: ((totalWaste / totalArea) * 100).toFixed(1),
             time: Date.now() - startTime,
             isOptimal: algo.id === BRANCH_AND_BOUND,
-            quality: algo.id === GENETIC_ALGORITHM ? 'Near-optimal' : 'Heuristic'
+            quality: algo.id === GENETIC_ALGORITHM ? 'Near-optimal' : algo.id === BRANCH_AND_BOUND ? 'Optimal' : 'Heuristic'
           });
         }
       } catch (error) {
@@ -261,13 +257,38 @@ const CountertopOptimizer = () => {
   };
   
   const runGreedyAlgorithm = (pieces, algorithmType) => {
-    // This is a simplified version of the greedy algorithm for comparison
+    // Deep copy pieces to avoid mutation
+    const piecesCopy = pieces.map(p => ({ ...p }));
     const slabs = [];
     
-    // Sort pieces by area
-    const sortedPieces = [...pieces].sort((a, b) => b.area - a.area);
+    // Pre-process rotation for greedy algorithms
+    piecesCopy.forEach(piece => {
+      const normalFits = piece.effectiveWidth <= slabWidth && piece.effectiveHeight <= slabHeight;
+      const rotatedFits = piece.effectiveHeight <= slabWidth && piece.effectiveWidth <= slabHeight;
+      
+      if (!normalFits && rotatedFits) {
+        piece.rotated = true;
+        [piece.width, piece.height] = [piece.height, piece.width];
+        [piece.effectiveWidth, piece.effectiveHeight] = [piece.effectiveHeight, piece.effectiveWidth];
+      } else if (normalFits && rotatedFits) {
+        // Choose best orientation based on waste minimization
+        const normalWaste = (slabWidth - piece.effectiveWidth) * piece.effectiveHeight + 
+                           (slabHeight - piece.effectiveHeight) * slabWidth;
+        const rotatedWaste = (slabWidth - piece.effectiveHeight) * piece.effectiveWidth + 
+                            (slabHeight - piece.effectiveWidth) * slabWidth;
+        
+        if (rotatedWaste < normalWaste) {
+          piece.rotated = true;
+          [piece.width, piece.height] = [piece.height, piece.width];
+          [piece.effectiveWidth, piece.effectiveHeight] = [piece.effectiveHeight, piece.effectiveWidth];
+        }
+      }
+    });
     
-    sortedPieces.forEach(piece => {
+    // Sort pieces by area
+    piecesCopy.sort((a, b) => b.area - a.area);
+    
+    piecesCopy.forEach(piece => {
       let placed = false;
       
       // Try to place in existing slabs
@@ -429,7 +450,9 @@ const CountertopOptimizer = () => {
       slabHeight,
       allowSplitting,
       minSplitLength,
-      kerfloss
+      kerfloss,
+      algorithm,
+      maxSlabs
     };
     const dataStr = JSON.stringify(config, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
@@ -456,6 +479,8 @@ const CountertopOptimizer = () => {
           if (config.hasOwnProperty('allowSplitting')) setAllowSplitting(config.allowSplitting);
           if (config.minSplitLength) setMinSplitLength(config.minSplitLength);
           if (config.kerfloss !== undefined) setKerfloss(config.kerfloss);
+          if (config.algorithm) setAlgorithm(config.algorithm);
+          if (config.maxSlabs) setMaxSlabs(config.maxSlabs);
           setResult(null);
           
           // Update nextId
@@ -469,21 +494,6 @@ const CountertopOptimizer = () => {
     }
   };
   
-  // Helper function to check if a piece fits in a bin
-  const canFit = (piece, bin) => {
-    // Check all possible positions in the bin
-    for (const space of bin.spaces) {
-      if (piece.effectiveWidth <= space.width && piece.effectiveHeight <= space.height) {
-        return true;
-      }
-      // Check rotated
-      if (piece.effectiveHeight <= space.width && piece.effectiveWidth <= space.height) {
-        return true;
-      }
-    }
-    return false;
-  };
-
   // Helper function to place a piece in a bin
   const placePiece = (piece, bin, x, y, rotated) => {
     const newBin = {
@@ -492,11 +502,7 @@ const CountertopOptimizer = () => {
         ...piece,
         x,
         y,
-        rotated,
-        width: rotated ? piece.height : piece.width,
-        height: rotated ? piece.width : piece.height,
-        effectiveWidth: rotated ? piece.effectiveHeight : piece.effectiveWidth,
-        effectiveHeight: rotated ? piece.effectiveWidth : piece.effectiveHeight
+        rotated
       }],
       spaces: []
     };
@@ -504,55 +510,73 @@ const CountertopOptimizer = () => {
     const pieceWidth = rotated ? piece.effectiveHeight : piece.effectiveWidth;
     const pieceHeight = rotated ? piece.effectiveWidth : piece.effectiveHeight;
     
-    // Rebuild available spaces using simple guillotine cuts
+    // Rebuild available spaces using simple guillotine approach
+    const spaces = [];
     const occupiedRects = newBin.pieces.map(p => ({
       x: p.x,
       y: p.y,
-      width: p.effectiveWidth,
-      height: p.effectiveHeight
+      width: p.rotated ? p.effectiveHeight : p.effectiveWidth,
+      height: p.rotated ? p.effectiveWidth : p.effectiveHeight
     }));
     
-    // Create two new spaces from the guillotine cut
-    const spaces = [];
+    // Get all unique x and y coordinates
+    const xCoords = [0, slabWidth];
+    const yCoords = [0, slabHeight];
     
-    // Space to the right
-    if (x + pieceWidth < slabWidth) {
-      spaces.push({
-        x: x + pieceWidth,
-        y: y,
-        width: slabWidth - (x + pieceWidth),
-        height: pieceHeight
-      });
-    }
-    
-    // Space below
-    if (y + pieceHeight < slabHeight) {
-      spaces.push({
-        x: x,
-        y: y + pieceHeight,
-        width: slabWidth,
-        height: slabHeight - (y + pieceHeight)
-      });
-    }
-    
-    // Add remaining spaces from the bin that don't overlap with the new piece
-    bin.spaces.forEach(space => {
-      // Check if this space overlaps with the placed piece
-      if (space.x + space.width <= x || space.x >= x + pieceWidth ||
-          space.y + space.height <= y || space.y >= y + pieceHeight) {
-        // No overlap, keep the space
-        spaces.push(space);
-      }
+    occupiedRects.forEach(rect => {
+      xCoords.push(rect.x, rect.x + rect.width);
+      yCoords.push(rect.y, rect.y + rect.height);
     });
     
-    // Remove duplicate and invalid spaces
-    newBin.spaces = spaces.filter(space => space.width > 0 && space.height > 0);
+    // Sort and remove duplicates
+    const uniqueX = [...new Set(xCoords)].sort((a, b) => a - b);
+    const uniqueY = [...new Set(yCoords)].sort((a, b) => a - b);
+    
+    // Check each potential rectangle
+    for (let i = 0; i < uniqueX.length - 1; i++) {
+      for (let j = 0; j < uniqueY.length - 1; j++) {
+        const x1 = uniqueX[i];
+        const y1 = uniqueY[j];
+        const x2 = uniqueX[i + 1];
+        const y2 = uniqueY[j + 1];
+        
+        // Check if this rectangle overlaps with any piece
+        let overlaps = false;
+        for (const rect of occupiedRects) {
+          if (!(x2 <= rect.x || x1 >= rect.x + rect.width ||
+                y2 <= rect.y || y1 >= rect.y + rect.height)) {
+            overlaps = true;
+            break;
+          }
+        }
+        
+        if (!overlaps && x2 - x1 >= 10 && y2 - y1 >= 10) {
+          spaces.push({
+            x: x1,
+            y: y1,
+            width: x2 - x1,
+            height: y2 - y1
+          });
+        }
+      }
+    }
+    
+    // Sort spaces by area (largest first for better packing)
+    spaces.sort((a, b) => (b.width * b.height) - (a.width * a.height));
+    
+    newBin.spaces = spaces.slice(0, 20); // Limit for performance
+    
+    // Update waste calculation
+    const usedArea = newBin.pieces.reduce((sum, p) => 
+      sum + (p.rotated ? p.effectiveHeight * p.effectiveWidth : p.effectiveWidth * p.effectiveHeight), 0);
+    newBin.wasteArea = newBin.totalArea - usedArea;
+    newBin.wastePercentage = ((newBin.wasteArea / newBin.totalArea) * 100).toFixed(1);
     
     return newBin;
   };
 
   // Branch and Bound Algorithm
-  const branchAndBound = async (pieces) => {
+  const branchAndBound = (pieces) => {
     const startTime = Date.now();
     let bestSolution = null;
     let bestWaste = Infinity;
@@ -565,7 +589,7 @@ const CountertopOptimizer = () => {
       spaces: [{ x: 0, y: 0, width: slabWidth, height: slabHeight }],
       totalArea: slabWidth * slabHeight,
       wasteArea: slabWidth * slabHeight,
-      wastePercentage: 100
+      wastePercentage: "100"
     });
     
     // Calculate lower bound for number of bins needed
@@ -574,38 +598,30 @@ const CountertopOptimizer = () => {
     
     // State: [pieceIndex, bins, totalWaste]
     const stack = [[0, [createEmptyBin(1)], 0]];
-    let updateCounter = 0;
     
     while (stack.length > 0 && Date.now() - startTime < 30000) { // 30 second timeout
       const [pieceIndex, bins, currentWaste] = stack.pop();
       nodesExplored++;
-      updateCounter++;
       
-      if (updateCounter % 100 === 0) {
+      if (nodesExplored % 1000 === 0) {
         setOptimizationProgress({
           nodesExplored,
           bestWaste: bestWaste === Infinity ? null : bestWaste,
           currentDepth: pieceIndex,
           totalDepth: pieces.length
         });
-        
-        // Allow UI to update
-        await new Promise(resolve => setTimeout(resolve, 0));
       }
       
       // All pieces placed
       if (pieceIndex === pieces.length) {
         if (currentWaste < bestWaste) {
           bestWaste = currentWaste;
-          bestSolution = bins.map(bin => {
-            const usedArea = bin.pieces.reduce((sum, p) => 
-              sum + (p.effectiveWidth * p.effectiveHeight), 0);
-            return {
-              ...bin,
-              wasteArea: bin.totalArea - usedArea,
-              wastePercentage: ((bin.totalArea - usedArea) / bin.totalArea * 100).toFixed(1)
-            };
-          });
+          bestSolution = bins.map(bin => ({
+            ...bin,
+            wasteArea: bin.totalArea - bin.pieces.reduce((sum, p) => 
+              sum + (p.rotated ? p.effectiveHeight * p.effectiveWidth : p.effectiveWidth * p.effectiveHeight), 0),
+            wastePercentage: ((bin.wasteArea / bin.totalArea) * 100).toFixed(1)
+          }));
         }
         continue;
       }
@@ -856,19 +872,6 @@ const CountertopOptimizer = () => {
           totalGenerations: GENERATIONS,
           bestFitness: fitness(population[0])
         });
-        
-        // Check if any pieces couldn't be placed
-        if (unplacedPieces && unplacedPieces.length > 0) {
-          setResult({
-            error: true,
-            errorMessage: `Could not place ${unplacedPieces.length} piece(s) within ${maxSlabs} slabs. Consider increasing maximum slabs or enabling piece splitting.`,
-            unplacedPieces,
-            partialResult: slabs
-          });
-          setIsProcessing(false);
-          setOptimizationProgress(null);
-          return;
-        }
       }
     }
     
@@ -895,8 +898,7 @@ const CountertopOptimizer = () => {
         // This piece is too long in one dimension but can be split
         
         // Determine if we should split horizontally or vertically
-        const splitHorizontally = (c.width > slabWidth || c.width + kerfloss > slabWidth) && 
-                                 (c.height <= slabHeight && c.height + kerfloss <= slabHeight);
+        const splitHorizontally = effectiveWidth > slabWidth && effectiveHeight <= slabHeight;
         
         if (splitHorizontally) {
           // Split horizontally (width-wise)
@@ -905,12 +907,12 @@ const CountertopOptimizer = () => {
           let piecesCreated = [];
           
           while (remainingWidth > 0) {
-            // Determine width of this segment - account for kerf
+            // Determine width of this segment
             const maxSegmentWidth = slabWidth - kerfloss;
             const segmentWidth = Math.min(remainingWidth, maxSegmentWidth);
             
             // Only create pieces that meet minimum size requirement
-            if (segmentWidth >= minSplitLength || remainingWidth <= segmentWidth) {
+            if (segmentWidth >= minSplitLength) {
               const newPiece = {
                 id: `${c.id}_${piecesMade + 1}`,
                 originalId: c.id,
@@ -930,11 +932,6 @@ const CountertopOptimizer = () => {
             }
             
             remainingWidth -= segmentWidth;
-            
-            // For debugging
-            if (c.label === 'Long Countertop') {
-              console.log(`Split ${c.label}: Part ${piecesMade} = ${segmentWidth}" × ${c.height}", remaining = ${remainingWidth}"`);
-            }
           }
           
           // Store information about the split
@@ -959,7 +956,7 @@ const CountertopOptimizer = () => {
             const segmentHeight = Math.min(remainingHeight, maxSegmentHeight);
             
             // Only create pieces that meet minimum size requirement
-            if (segmentHeight >= minSplitLength || remainingHeight <= segmentHeight) {
+            if (segmentHeight >= minSplitLength) {
               const newPiece = {
                 id: `${c.id}_${piecesMade + 1}`,
                 originalId: c.id,
@@ -978,7 +975,7 @@ const CountertopOptimizer = () => {
               piecesMade++;
             }
             
-            remainingHeight -= maxSegmentHeight;
+            remainingHeight -= segmentHeight;
           }
           
           // Store information about the split
@@ -993,10 +990,7 @@ const CountertopOptimizer = () => {
           }
         }
       } else {
-        // No splitting needed or splitting disabled - add as is
-        const effectiveWidth = c.width + kerfloss;
-        const effectiveHeight = c.height + kerfloss;
-        
+        // No splitting needed, use as is
         pieces.push({
           id: c.id,
           width: c.width,
@@ -1058,173 +1052,11 @@ const CountertopOptimizer = () => {
           // Use Genetic Algorithm
           slabs = geneticAlgorithm(pieces);
         } else {
-          // Use original greedy algorithms
-        pieces.forEach(piece => {
-          // Check both normal and rotated orientations
-          const normalFits = piece.effectiveWidth <= slabWidth && piece.effectiveHeight <= slabHeight;
-          const rotatedFits = piece.effectiveHeight <= slabWidth && piece.effectiveWidth <= slabHeight;
-          
-          if (!normalFits && !rotatedFits) {
-            // Piece doesn't fit in any orientation - this shouldn't happen after preprocessing
-            console.error('Piece does not fit:', piece);
-          } else if (!normalFits && rotatedFits) {
-            // Must rotate
-            piece.rotated = true;
-            [piece.width, piece.height] = [piece.height, piece.width];
-            [piece.effectiveWidth, piece.effectiveHeight] = [piece.effectiveHeight, piece.effectiveWidth];
-          } else if (normalFits && rotatedFits) {
-            // Choose best orientation based on waste minimization
-            const normalWaste = (slabWidth - piece.effectiveWidth) * piece.effectiveHeight + 
-                               (slabHeight - piece.effectiveHeight) * slabWidth;
-            const rotatedWaste = (slabWidth - piece.effectiveHeight) * piece.effectiveWidth + 
-                                (slabHeight - piece.effectiveWidth) * slabWidth;
-            
-            if (rotatedWaste < normalWaste) {
-              piece.rotated = true;
-              [piece.width, piece.height] = [piece.height, piece.width];
-              [piece.effectiveWidth, piece.effectiveHeight] = [piece.effectiveHeight, piece.effectiveWidth];
-            }
-          }
-        });
-        
-        // Sort pieces by area in descending order
-        pieces.sort((a, b) => b.area - a.area);
-        
-        // Initialize slabs array
-        slabs = [];
-        
-        // For each piece, find a place in existing slabs or create a new slab
-        pieces.forEach(piece => {
-          let placed = false;
-          
-          // Try to place in existing slabs
-          for (let i = 0; i < slabs.length; i++) {
-            const slab = slabs[i];
-            
-            if (slab.spaces.length === 0) {
-              continue;
-            }
-            
-            // Find best fit space based on algorithm
-            let bestFitIndex = -1;
-            let bestFitScore = algorithm === FIRST_FIT ? Infinity : Infinity;
-            
-            for (let j = 0; j < slab.spaces.length; j++) {
-              const space = slab.spaces[j];
-              
-              if (piece.effectiveWidth <= space.width && piece.effectiveHeight <= space.height) {
-                if (algorithm === FIRST_FIT) {
-                  // First fit: take the first space that fits
-                  bestFitIndex = j;
-                  break;
-                } else {
-                  // Best fit: minimize waste
-                  const widthWaste = space.width - piece.effectiveWidth;
-                  const heightWaste = space.height - piece.effectiveHeight;
-                  const totalWaste = widthWaste * piece.effectiveHeight + heightWaste * space.width;
-                  
-                  if (totalWaste < bestFitScore) {
-                    bestFitScore = totalWaste;
-                    bestFitIndex = j;
-                  }
-                }
-              }
-            }
-            
-            // If we found a space, place the piece there
-            if (bestFitIndex !== -1) {
-              const space = slab.spaces[bestFitIndex];
-              
-              // Place piece
-              slab.pieces.push({
-                ...piece,
-                x: space.x,
-                y: space.y
-              });
-              
-              // Split remaining space
-              const oldSpace = slab.spaces.splice(bestFitIndex, 1)[0];
-              
-              // Horizontal split (below the piece)
-              if (oldSpace.height > piece.effectiveHeight) {
-                slab.spaces.push({
-                  x: oldSpace.x,
-                  y: oldSpace.y + piece.effectiveHeight,
-                  width: oldSpace.width,
-                  height: oldSpace.height - piece.effectiveHeight
-                });
-              }
-              
-              // Vertical split (to the right of the piece)
-              if (oldSpace.width > piece.effectiveWidth) {
-                slab.spaces.push({
-                  x: oldSpace.x + piece.effectiveWidth,
-                  y: oldSpace.y,
-                  width: oldSpace.width - piece.effectiveWidth,
-                  height: piece.effectiveHeight
-                });
-              }
-              
-              // Sort spaces by area (smallest first for better packing)
-              slab.spaces.sort((a, b) => (a.width * a.height) - (b.width * b.height));
-              
-              placed = true;
-              break;
-            }
-          }
-          
-          // If not placed, create a new slab
-          if (!placed) {
-            if (slabs.length >= maxSlabs) {
-              console.error(`Cannot place piece ${piece.label} - maximum slabs (${maxSlabs}) reached`);
-              // Add to unplaced pieces list for error reporting
-              if (!unplacedPieces) unplacedPieces = [];
-              unplacedPieces.push(piece);
-            } else {
-              const newSlab = {
-                id: slabs.length + 1,
-                pieces: [{
-                  ...piece,
-                  x: 0,
-                  y: 0
-                }],
-                spaces: []
-              };
-              
-              // Create spaces for remaining area
-              if (slabHeight > piece.effectiveHeight) {
-                newSlab.spaces.push({
-                  x: 0,
-                  y: piece.effectiveHeight,
-                  width: slabWidth,
-                  height: slabHeight - piece.effectiveHeight
-                });
-              }
-              
-              if (slabWidth > piece.effectiveWidth) {
-                newSlab.spaces.push({
-                  x: piece.effectiveWidth,
-                  y: 0,
-                  width: slabWidth - piece.effectiveWidth,
-                  height: piece.effectiveHeight
-                });
-              }
-              
-              slabs.push(newSlab);
-            }
-          }
-        });
-        
-          slabs.forEach(slab => {
-            let usedArea = slab.pieces.reduce((sum, piece) => 
-              sum + (piece.effectiveWidth * piece.effectiveHeight), 0);
-            slab.totalArea = slabWidth * slabHeight;
-            slab.wasteArea = slab.totalArea - usedArea;
-            slab.wastePercentage = ((slab.wasteArea / slab.totalArea) * 100).toFixed(1);
-          });
+          // Use greedy algorithms
+          slabs = runGreedyAlgorithm(pieces, algorithm);
         }
         
-        // Calculate waste for each slab (for greedy algorithms)
+        // Calculate waste for each slab (for algorithms that don't pre-calculate)
         slabs.forEach(slab => {
           if (!slab.wasteArea) {
             let usedArea = slab.pieces.reduce((sum, piece) => 
@@ -1235,42 +1067,42 @@ const CountertopOptimizer = () => {
           }
         });
         
-      // Calculate overall statistics
-      const totalPieces = pieces.length;
-      const totalSlabs = slabs.length;
-      const totalAreaNeeded = pieces.reduce((sum, piece) => 
-        sum + (piece.effectiveWidth * piece.effectiveHeight), 0);
-      const totalSlabArea = slabs.length * (slabWidth * slabHeight);
-      const totalWaste = totalSlabArea - totalAreaNeeded;
-      const totalWastePercentage = ((totalWaste / totalSlabArea) * 100).toFixed(1);
-      
-      // Calculate cost estimate (assuming $50 per sq ft)
-      const pricePerSqFt = 50;
-      const totalSlabSqFt = (totalSlabArea / 144).toFixed(2);
-      const estimatedCost = (totalSlabSqFt * pricePerSqFt).toFixed(2);
-      
-      setResult({
-        slabs,
-        totalPieces,
-        totalSlabs,
-        totalAreaNeeded,
-        totalSlabArea,
-        totalWaste,
-        totalWastePercentage,
-        splitPieces: splitPiecesInfo,
-        totalSlabSqFt,
-        estimatedCost
-      });
-    } catch (error) {
-      console.error("Optimization error:", error);
-      setResult({
-        error: true,
-        errorMessage: `An error occurred during optimization: ${error.message}`
-      });
-    } finally {
-      setIsProcessing(false);
-      setOptimizationProgress(null);
-    }
+        // Calculate overall statistics
+        const totalPieces = pieces.length;
+        const totalSlabs = slabs.length;
+        const totalAreaNeeded = pieces.reduce((sum, piece) => 
+          sum + (piece.effectiveWidth * piece.effectiveHeight), 0);
+        const totalSlabArea = slabs.length * (slabWidth * slabHeight);
+        const totalWaste = totalSlabArea - totalAreaNeeded;
+        const totalWastePercentage = ((totalWaste / totalSlabArea) * 100).toFixed(1);
+        
+        // Calculate cost estimate (assuming $50 per sq ft)
+        const pricePerSqFt = 50;
+        const totalSlabSqFt = (totalSlabArea / 144).toFixed(2);
+        const estimatedCost = (totalSlabSqFt * pricePerSqFt).toFixed(2);
+        
+        setResult({
+          slabs,
+          totalPieces,
+          totalSlabs,
+          totalAreaNeeded,
+          totalSlabArea,
+          totalWaste,
+          totalWastePercentage,
+          splitPieces: splitPiecesInfo,
+          totalSlabSqFt,
+          estimatedCost
+        });
+      } catch (error) {
+        console.error("Optimization error:", error);
+        setResult({
+          error: true,
+          errorMessage: `An error occurred during optimization: ${error.message}`
+        });
+      } finally {
+        setIsProcessing(false);
+      }
+    }, 50);
   };
 
   // Color palette for visualization
@@ -1351,6 +1183,21 @@ const CountertopOptimizer = () => {
               </p>
             </div>
             
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Maximum Slabs</label>
+              <input
+                type="number"
+                value={maxSlabs}
+                onChange={(e) => setMaxSlabs(parseInt(e.target.value) || 3)}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                min="1"
+                max="10"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Limit for optimization algorithms
+              </p>
+            </div>
+            
             <div className="mt-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="font-medium text-gray-800 mb-3">Splitting Options</h3>
               <div className="flex items-center mb-3">
@@ -1393,12 +1240,18 @@ const CountertopOptimizer = () => {
                 onChange={(e) => setAlgorithm(e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value={GUILLOTINE}>Guillotine Cutting (Best Fit)</option>
-                <option value={FIRST_FIT}>First Fit Algorithm</option>
-                <option value={BEST_FIT}>Best Fit Algorithm</option>
+                <option value={GUILLOTINE}>Guillotine Cutting (Fast)</option>
+                <option value={FIRST_FIT}>First Fit Algorithm (Very Fast)</option>
+                <option value={BEST_FIT}>Best Fit Algorithm (Fast)</option>
+                <option value={BRANCH_AND_BOUND}>Branch & Bound (Optimal Solution)</option>
+                <option value={GENETIC_ALGORITHM}>Genetic Algorithm (Near-Optimal)</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Guillotine typically provides the best results
+                {algorithm === BRANCH_AND_BOUND && "Finds the mathematically optimal solution (slow for >20 pieces)"}
+                {algorithm === GENETIC_ALGORITHM && "Evolutionary algorithm that finds near-optimal solutions"}
+                {algorithm === GUILLOTINE && "Fast heuristic that typically provides good results"}
+                {algorithm === FIRST_FIT && "Fastest algorithm, places pieces in first available space"}
+                {algorithm === BEST_FIT && "Minimizes wasted space when placing each piece"}
               </p>
             </div>
           </div>
@@ -1741,12 +1594,6 @@ const CountertopOptimizer = () => {
                             const scaleX = 100 / slabWidth;
                             const scaleY = 100 / slabHeight;
                             
-                            // Use the actual dimensions (accounting for rotation)
-                            const displayWidth = piece.rotated ? piece.height : piece.width;
-                            const displayHeight = piece.rotated ? piece.width : piece.height;
-                            const effectiveDisplayWidth = piece.effectiveWidth || (displayWidth + kerfloss);
-                            const effectiveDisplayHeight = piece.effectiveHeight || (displayHeight + kerfloss);
-                            
                             return (
                               <div
                                 key={pieceIndex}
@@ -1754,14 +1601,14 @@ const CountertopOptimizer = () => {
                                 style={{
                                   left: `${piece.x * scaleX}%`,
                                   top: `${piece.y * scaleY}%`,
-                                  width: `${Math.min(effectiveDisplayWidth, slabWidth - piece.x) * scaleX}%`,
-                                  height: `${Math.min(effectiveDisplayHeight, slabHeight - piece.y) * scaleY}%`,
+                                  width: `${piece.effectiveWidth * scaleX}%`,
+                                  height: `${piece.effectiveHeight * scaleY}%`,
                                   backgroundColor: colors[colorIndex],
                                 }}
-                                title={`${piece.label} - ${displayWidth}×${displayHeight}" ${piece.rotated ? '(Rotated)' : ''}`}
+                                title={`${piece.label} - ${piece.width}×${piece.height}" ${piece.rotated ? '(Rotated)' : ''}`}
                               >
                                 <div className="text-xs text-white font-semibold text-center px-1">
-                                  {displayWidth}×{displayHeight}
+                                  {piece.width}×{piece.height}
                                 </div>
                                 <div className="text-xs text-white text-center px-1 truncate w-full">
                                   {piece.label}
@@ -1809,41 +1656,18 @@ const CountertopOptimizer = () => {
                           {piece.originalLabel} → {piece.parts} sections
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-sm">
-                          {piece.pieces && piece.pieces.map((subPiece, idx) => {
-                            const placedPiece = result.slabs.some(slab => 
-                              slab.pieces.some(p => p.id === subPiece.id)
-                            );
-                            return (
-                              <div key={idx} className={`text-gray-600 ${!placedPiece ? 'text-red-600' : ''}`}>
-                                • Part {idx + 1}: {subPiece.width}" × {subPiece.height}"
-                                {subPiece.rotated && ' (R)'}
-                                {!placedPiece && ' ⚠️ Not placed'}
-                              </div>
-                            );
-                          })}
+                          {piece.pieces && piece.pieces.map((subPiece, idx) => (
+                            <div key={idx} className="text-gray-600">
+                              • Part {idx + 1}: {subPiece.width}" × {subPiece.height}"
+                              {subPiece.rotated && ' (R)'}
+                            </div>
+                          ))}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
                           Split {piece.direction}ly to fit slab constraints
                         </div>
                       </div>
                     ))}
-                  </div>
-                  
-                  {result.splitPieces.some(piece => 
-                    piece.pieces.some(subPiece => 
-                      !result.slabs.some(slab => 
-                        slab.pieces.some(p => p.id === subPiece.id)
-                      )
-                    )
-                  ) && (
-                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
-                      <p className="text-sm text-red-700">
-                        ⚠️ Some split pieces could not be placed. Consider increasing maximum slabs or adjusting piece sizes.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
                   </div>
                 </div>
               )}
@@ -1910,7 +1734,7 @@ const CountertopOptimizer = () => {
       
       {/* Saved Configurations Management */}
       {Object.keys(savedConfigs).length > 0 && (
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-lg font-semibold mb-3">Saved Configurations</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Object.entries(savedConfigs).map(([name, config]) => (
@@ -2015,7 +1839,7 @@ const CountertopOptimizer = () => {
                       {comparisonResults[0].slabs === comparisonResults[comparisonResults.length - 1].slabs
                         ? "All algorithms found solutions with the same number of slabs. Choose based on speed preference."
                         : `Branch & Bound found the optimal solution with ${comparisonResults.find(r => r.isOptimal).slabs} slabs. ` +
-                          `This saves ${comparisonResults[0].slabs - comparisonResults.find(r => r.isOptimal).slabs} slab(s) compared to the fastest algorithm.`}
+                          `This saves ${comparisonResults[comparisonResults.length - 1].slabs - comparisonResults.find(r => r.isOptimal).slabs} slab(s) compared to the fastest algorithm.`}
                     </p>
                   </div>
                   
